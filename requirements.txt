@@ -1,0 +1,6 @@
+fastapi==0.110.2
+uvicorn[standard]==0.29.0
+python-multipart==0.0.9
+language-tool-python==2.7.1
+requests==2.32.5
+
