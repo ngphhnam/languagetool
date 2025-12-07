@@ -30,6 +30,7 @@ class CheckRequest(BaseModel):
     """Request model for JSON grammar check endpoint"""
     text: str
     language: Optional[str] = "en-US"
+    questionText: Optional[str] = None
 
 # Initialize LanguageTool (only self-hosted mode is supported)
 LANGTOOL_SERVER = os.getenv("LANGTOOL_SERVER", "http://localhost:8011")  # Java server port
@@ -265,15 +266,20 @@ async def reinit():
         }
 
 
-async def check_grammar_internal(text: str, language: str = "en-US"):
+async def check_grammar_internal(text: str, language: str = "en-US", question_text: Optional[str] = None):
     """
     Internal function to check grammar and spelling
+    
+    Args:
+        text: Text to check
+        language: Language code
+        question_text: Optional question text for context
     
     Returns the result dictionary
     """
     if not LANGTOOL_AVAILABLE or not tool:
         # Fallback to basic mock response
-        return {
+        result = {
             "language": {"name": "English", "code": language},
             "matches": [
                 {
@@ -286,6 +292,10 @@ async def check_grammar_internal(text: str, language: str = "en-US"):
                 }
             ],
         }
+        # Add questionText to response if provided
+        if question_text:
+            result["questionText"] = question_text
+        return result
     
     try:
         # Check text with LanguageTool - run in thread pool to avoid blocking
@@ -322,13 +332,19 @@ async def check_grammar_internal(text: str, language: str = "en-US"):
             "en-CA": "English (Canada)"
         }
         
-        return {
+        result = {
             "language": {
                 "name": lang_names.get(language, "English"),
                 "code": language
             },
             "matches": result_matches
         }
+        
+        # Add questionText to response if provided
+        if question_text:
+            result["questionText"] = question_text
+        
+        return result
         
     except Exception as e:
         raise HTTPException(
@@ -338,14 +354,19 @@ async def check_grammar_internal(text: str, language: str = "en-US"):
 
 
 @app.post("/v2/check")
-async def check(text: str = Form(...), language: str = Form("en-US")):
+async def check(
+    text: str = Form(...), 
+    language: str = Form("en-US"),
+    questionText: Optional[str] = Form(None)
+):
     """
     Check grammar and spelling using LanguageTool (form-data format)
     
     - **text**: Text to check
     - **language**: Language code (default: en-US)
+    - **questionText**: Optional question text for context
     """
-    return await check_grammar_internal(text, language)
+    return await check_grammar_internal(text, language, questionText)
 
 
 @app.post("/v2/check/json")
@@ -357,7 +378,8 @@ async def check_json(request: CheckRequest):
     ```json
     {
         "text": "Text to check for grammar and spelling errors",
-        "language": "en-US"
+        "language": "en-US",
+        "questionText": "Optional question text for context"
     }
     ```
     
@@ -368,6 +390,7 @@ async def check_json(request: CheckRequest):
             "name": "English (US)",
             "code": "en-US"
         },
+        "questionText": "Optional question text (if provided in request)",
         "matches": [
             {
                 "message": "Possible spelling mistake",
@@ -389,5 +412,9 @@ async def check_json(request: CheckRequest):
     }
     ```
     """
-    return await check_grammar_internal(request.text, request.language or "en-US")
+    return await check_grammar_internal(
+        request.text, 
+        request.language or "en-US",
+        request.questionText
+    )
 
